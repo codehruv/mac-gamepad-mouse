@@ -254,6 +254,8 @@ struct ContentView: View {
             if !inputEngine.extraInputStatus.isEmpty {
                 Text(inputEngine.extraInputStatus).font(.caption).foregroundStyle(.secondary)
             }
+            mappingRow("Active mode", inputEngine.activeProfileName.capitalized)
+            mappingRow("Frontmost app", inputEngine.frontmostApplicationName.isEmpty ? "Desktop" : inputEngine.frontmostApplicationName)
             if let error = inputEngine.configurationError {
                 Text(error).font(.caption).foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
@@ -261,8 +263,8 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 10) {
                 mappingRow("Left stick", inputEngine.configuration.leftStick.mode.rawValue.capitalized)
                 mappingRow("Right stick", inputEngine.configuration.rightStick.mode.rawValue.capitalized)
-                ForEach(inputEngine.configuration.buttons.keys.sorted(), id: \.self) { id in
-                    mappingRow(id, inputEngine.configuration.buttons[id]?.label ?? "Disabled")
+                ForEach(inputEngine.effectiveButtons.keys.sorted(), id: \.self) { id in
+                    mappingRow(id, inputEngine.effectiveButtons[id]?.label ?? "Disabled")
                 }
             }
             Text("Edit and save JSON, then Reload Config (⌘R). Sliders save to the same file. Invalid edits keep the current mapping.")
@@ -281,6 +283,7 @@ struct ContentView: View {
     private var advancedBlock: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionTitle("Advanced")
+            Toggle("Show active mode overlay", isOn: $inputEngine.showModeOverlay)
             Toggle("Show debug info", isOn: $showDebugInfo)
             Text(
                 showDebugInfo

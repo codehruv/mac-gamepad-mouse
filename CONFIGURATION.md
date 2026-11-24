@@ -11,6 +11,9 @@ window keeps controller mapping running. Quitting the app releases held inputs.
 Controller mapping starts enabled on each launch, once Accessibility permission
 is available. Turning it off pauses the current session; relaunching enables it
 again. Add the installed app in macOS Login Items to start it when you sign in.
+The click-through translucent mode overlay appears at the top-right of the main
+screen by default. Set `showModeOverlay` to `false`, or use **Controller → Show
+Mode Overlay**, to hide it.
 Quit Controlly or disable its mappings before enabling this app so
 one press produces one action. Use Show keyboard / Hide keyboard in the app for
 the floating keyboard. Automatic opening on text focus starts off so it does not
@@ -67,6 +70,45 @@ swap the sticks. Tuning is shared by both sticks:
 Sliders save these three values to the same JSON file. If you have edited it
 externally, sliders refuse to overwrite those edits until you reload.
 
+## Per-app modes
+
+`profiles` adds sparse button overrides for the frontmost application's bundle
+ID. Unlisted apps use the base `buttons` map. The app observes normal macOS app
+activation notifications, so switching is immediate and needs no polling, Screen
+Time history, network connection, or additional permission.
+
+```json
+{
+  "profiles": {
+    "Browser": {
+      "apps": ["app.zen-browser.zen", "com.google.Chrome"],
+      "buttons": {
+        "b": { "type": "key", "key": "w", "modifiers": ["command"] },
+        "backRight": { "type": "none" }
+      }
+    },
+    "Calls": {
+      "apps": ["us.zoom.xos"],
+      "buttons": {
+        "x": { "type": "key", "key": "a", "modifiers": ["command", "shift"] }
+      }
+    }
+  }
+}
+```
+
+A profile changes only the buttons it names. Its action replaces the base action
+whole; an absent button inherits the base and `{"type":"none"}` disables it.
+Each bundle ID may appear in only one profile, so profile order never changes the
+result. Invalid profiles reject the whole file and preserve the last good mapping.
+
+The overlay and settings window show the active profile and frontmost app. A held
+click or switcher keeps the action it started with even if the active app changes.
+Version 1 profiles intentionally affect buttons only; sticks, touchpad, Dictation,
+sensitivities, and deadzone stay global. Spotlight, Mission Control, and the app
+switcher do not become the frontmost app, so keep shortcuts needed in those overlays
+in the base map.
+
 ## Buttons and shortcuts
 
 `buttons` is a dictionary of input names to actions. Omitting `buttons` entirely
@@ -94,7 +136,7 @@ This sends one Cmd+Shift+C tap when pressed. Supported modifiers are `command`,
 `enter`/`return`, `escape`, `space`, `tab`, `backspace`, `delete` (forward delete),
 `left`, `right`, `up`, `down`, `home`, `end`, `pageup`, `pagedown`, and `f1`–`f20`.
 Key names refer to physical US keyboard positions. Standalone modifier holds, macros,
-layers, hold-to-talk, and per-app profiles are not implemented.
+layers, hold-to-talk, and per-window or per-site profiles are not implemented.
 
 Use `{"type":"mouse","button":"left"}` for a held left click (`right` and
 `middle` also work), or `{"type":"dictation"}` for the dictation shortcut below.

@@ -10,6 +10,9 @@ final class InputEngine: ObservableObject {
     @Published private(set) var configuration = ControllerConfiguration()
     @Published private(set) var configurationError: String?
     @Published private(set) var lastTickSummary = ""
+    @Published private(set) var activeProfileName = "Base"
+    @Published private(set) var frontmostBundleID = ""
+    @Published private(set) var frontmostApplicationName = ""
 
     private let configFile = ConfigurationFile()
     private let controllerService: ControllerService
@@ -28,6 +31,7 @@ final class InputEngine: ObservableObject {
     private var repeatDeadline: [String: Date] = [:]
     private var mergedPollFrameIndex = 0
     private var terminationObserver: NSObjectProtocol?
+    private var applicationObserver: NSObjectProtocol?
 
     var configurationURL: URL { configFile.url }
     var pointerSensitivity: Double {
@@ -42,6 +46,13 @@ final class InputEngine: ObservableObject {
         get { configuration.deadzone }
         set { var next = configuration; next.deadzone = newValue; saveConfiguration(next) }
     }
+    var showModeOverlay: Bool {
+        get { configuration.showModeOverlay }
+        set { var next = configuration; next.showModeOverlay = newValue; saveConfiguration(next) }
+    }
+    var effectiveButtons: [String: ButtonAction] {
+        configuration.buttons(for: frontmostBundleID.isEmpty ? nil : frontmostBundleID)
+    }
 
     init(controllerService: ControllerService, mouse: MouseInjector, keyboard: KeyboardInjector, uiState: GamepadUIState) {
         self.controllerService = controllerService
@@ -49,6 +60,13 @@ final class InputEngine: ObservableObject {
         self.keyboard = keyboard
         self.uiState = uiState
         reloadConfiguration()
+        updateFrontmostApplication(NSWorkspace.shared.frontmostApplication)
+        applicationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            self?.updateFrontmostApplication(app)
+        }
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.stopTimer() }
@@ -56,6 +74,7 @@ final class InputEngine: ObservableObject {
 
     deinit {
         if let terminationObserver { NotificationCenter.default.removeObserver(terminationObserver) }
+        if let applicationObserver { NSWorkspace.shared.notificationCenter.removeObserver(applicationObserver) }
         stopTimer()
     }
 
@@ -64,6 +83,7 @@ final class InputEngine: ObservableObject {
             let next = try configFile.load()
             releaseAllButtons()
             configuration = next
+            resolveActiveProfile()
             configurationError = nil
         } catch {
             configurationError = "Could not load config: \(error.localizedDescription). Previous mapping kept."
@@ -75,6 +95,7 @@ final class InputEngine: ObservableObject {
             try configFile.save(next)
             releaseAllButtons()
             configuration = next
+            resolveActiveProfile()
             configurationError = nil
         } catch {
             configurationError = error.localizedDescription
@@ -163,7 +184,7 @@ final class InputEngine: ObservableObject {
         let changes = buttonState.update(pressedButtons(pad).union(edgeReport?.buttons ?? []))
         for id in changes.released.sorted() { releaseButton(id) }
         for id in changes.pressed.sorted() {
-            guard let action = configuration.buttons[id] else { continue }
+            guard let action = effectiveButtons[id] else { continue }
             // App/tab switchers cannot own conflicting modifier chords together.
             if action.type == .switcher && activeButtons.values.contains(where: { $0.type == .switcher }) { continue }
             activeButtons[id] = action
@@ -272,5 +293,18 @@ final class InputEngine: ObservableObject {
 
     private func setLastTickSummary(_ text: String) {
         if lastTickSummary != text { lastTickSummary = text }
+    }
+
+    private func updateFrontmostApplication(_ app: NSRunningApplication?) {
+        let bundleID = app?.bundleIdentifier ?? ""
+        let name = app?.localizedName ?? bundleID
+        if frontmostBundleID != bundleID { frontmostBundleID = bundleID }
+        if frontmostApplicationName != name { frontmostApplicationName = name }
+        resolveActiveProfile()
+    }
+
+    private func resolveActiveProfile() {
+        let name = configuration.profileName(for: frontmostBundleID.isEmpty ? nil : frontmostBundleID) ?? "Base"
+        if activeProfileName != name { activeProfileName = name }
     }
 }

@@ -115,6 +115,22 @@ struct ButtonAction: Codable, Equatable {
     }
 }
 
+struct ApplicationProfile: Codable, Equatable {
+    var apps: [String]
+    var buttons: [String: ButtonAction] = [:]
+
+    private enum CodingKeys: String, CodingKey { case apps, buttons }
+    init(apps: [String], buttons: [String: ButtonAction] = [:]) {
+        self.apps = apps
+        self.buttons = buttons
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        apps = try c.decode([String].self, forKey: .apps)
+        buttons = try c.decodeIfPresent([String: ButtonAction].self, forKey: .buttons) ?? [:]
+    }
+}
+
 struct ConfigurationError: LocalizedError {
     let message: String
     var errorDescription: String? { message }
@@ -130,6 +146,8 @@ struct ControllerConfiguration: Codable, Equatable {
     var deadzone: Double = 0.12
     var dictation = KeyShortcut(key: "d", modifiers: [.control, .option])
     var buttons: [String: ButtonAction] = Self.desktopButtons
+    var profiles: [String: ApplicationProfile] = [:]
+    var showModeOverlay = true
 
     static let buttonNames = [
         "a", "b", "x", "y", "leftShoulder", "rightShoulder", "leftTrigger",
@@ -160,7 +178,8 @@ struct ControllerConfiguration: Codable, Equatable {
 
     init() {}
     private enum CodingKeys: String, CodingKey {
-        case version, leftStick, rightStick, touchpad, pointerSensitivity, scrollSpeed, deadzone, dictation, buttons
+        case version, leftStick, rightStick, touchpad, pointerSensitivity, scrollSpeed, deadzone, dictation, buttons,
+             profiles, showModeOverlay
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -174,6 +193,8 @@ struct ControllerConfiguration: Codable, Equatable {
         dictation = try c.decodeIfPresent(KeyShortcut.self, forKey: .dictation) ?? dictation
         // An explicit buttons object is complete: {} disables all configurable buttons.
         buttons = try c.decodeIfPresent([String: ButtonAction].self, forKey: .buttons) ?? buttons
+        profiles = try c.decodeIfPresent([String: ApplicationProfile].self, forKey: .profiles) ?? profiles
+        showModeOverlay = try c.decodeIfPresent(Bool.self, forKey: .showModeOverlay) ?? showModeOverlay
     }
 
     func validate() throws {
@@ -188,23 +209,52 @@ struct ControllerConfiguration: Codable, Equatable {
         try require(touchpad.scrollSensitivity.isFinite && (50...3000).contains(touchpad.scrollSensitivity),
                     "touchpad.scrollSensitivity must be between 50 and 3000.")
         try require(dictation.keyCode != nil, "Unknown dictation key: \(dictation.key).")
-        for (id, action) in buttons {
-            try require(Self.buttonNames.contains(id), "Unknown button: \(id).")
-            switch action.type {
-            case .mouse:
-                try require(action.button != nil && action.key == nil && action.modifiers.isEmpty,
-                            "\(id): mouse needs button (left/right/middle), without key or modifiers.")
-            case .key, .switcher:
-                try require(action.shortcut?.keyCode != nil && action.button == nil,
-                            "\(id): key needs a supported key name, without a mouse button.")
-                if action.type == .switcher {
-                    try require(!action.modifiers.isEmpty, "\(id): switcher requires at least one modifier.")
+        func validateButtons(_ candidate: [String: ButtonAction], context: String) throws {
+            for (id, action) in candidate {
+                try require(Self.buttonNames.contains(id), "\(context)unknown button: \(id).")
+                switch action.type {
+                case .mouse:
+                    try require(action.button != nil && action.key == nil && action.modifiers.isEmpty,
+                                "\(context)\(id): mouse needs button (left/right/middle), without key or modifiers.")
+                case .key, .switcher:
+                    try require(action.shortcut?.keyCode != nil && action.button == nil,
+                                "\(context)\(id): key needs a supported key name, without a mouse button.")
+                    if action.type == .switcher {
+                        try require(!action.modifiers.isEmpty, "\(context)\(id): switcher requires at least one modifier.")
+                    }
+                case .dictation, .none:
+                    try require(action.button == nil && action.key == nil && action.modifiers.isEmpty,
+                                "\(context)\(id): \(action.type.rawValue) does not take button, key or modifiers.")
                 }
-            case .dictation, .none:
-                try require(action.button == nil && action.key == nil && action.modifiers.isEmpty,
-                            "\(id): \(action.type.rawValue) does not take button, key or modifiers.")
             }
         }
+        try validateButtons(buttons, context: "")
+        var claimedApps: [String: String] = [:]
+        for name in profiles.keys.sorted() {
+            guard let profile = profiles[name] else { continue }
+            try require(!name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                        "Profile names cannot be blank.")
+            try require(!profile.apps.isEmpty, "Profile \(name) must list at least one app bundle ID.")
+            try validateButtons(profile.buttons, context: "Profile \(name), ")
+            for bundleID in profile.apps {
+                try require(!bundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                            "Profile \(name) contains a blank app bundle ID.")
+                if let owner = claimedApps[bundleID] {
+                    throw ConfigurationError(message: "App \(bundleID) appears in profiles \(owner) and \(name).")
+                }
+                claimedApps[bundleID] = name
+            }
+        }
+    }
+
+    func profileName(for bundleID: String?) -> String? {
+        guard let bundleID else { return nil }
+        return profiles.keys.sorted().first { profiles[$0]?.apps.contains(bundleID) == true }
+    }
+
+    func buttons(for bundleID: String?) -> [String: ButtonAction] {
+        guard let name = profileName(for: bundleID), let profile = profiles[name] else { return buttons }
+        return buttons.merging(profile.buttons) { _, override in override }
     }
 
     func encoded() throws -> Data {

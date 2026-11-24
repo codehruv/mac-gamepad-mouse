@@ -38,11 +38,28 @@ struct ConfigurationChecks {
             try expect(config.leftStick.mode == .mouse && config.rightStick.mode == .scroll)
             try expect(config.buttons["leftTrigger"]?.type == .dictation)
             try expect(config.buttons["leftStick"]?.type == .dictation)
+            try expect(config.profiles.isEmpty && config.showModeOverlay)
         }
         try check("default JSON round trips without losing shortcuts") {
             let original = ControllerConfiguration()
             let decoded = try JSONDecoder().decode(ControllerConfiguration.self, from: original.encoded())
             try expect(decoded == original)
+        }
+        try check("frontmost app profile sparsely overlays the base mapping") {
+            let config = try decode(#"{"profiles":{"Browser":{"apps":["app.zen-browser.zen","com.google.Chrome"],"buttons":{"b":{"type":"key","key":"w","modifiers":["command"]},"backRight":{"type":"none"}}}}}"#)
+            try expect(config.profileName(for: "app.zen-browser.zen") == "Browser")
+            try expect(config.profileName(for: "com.apple.finder") == nil)
+            let browser = config.buttons(for: "app.zen-browser.zen")
+            try expect(browser["b"]?.shortcut == KeyShortcut(key: "w", modifiers: [.command]))
+            try expect(browser["backRight"]?.type == ActionType.none)
+            try expect(browser["a"] == config.buttons["a"])
+            try expect(config.buttons(for: "com.apple.finder") == config.buttons)
+        }
+        try check("profiles validate bundle ownership and sparse actions") {
+            try rejects(#"{"profiles":{"Empty":{"apps":[]}}}"#)
+            try rejects(#"{"profiles":{"A":{"apps":["com.example.app"]},"B":{"apps":["com.example.app"]}}}"#)
+            try rejects(#"{"profiles":{"Bad":{"apps":["com.example.app"],"buttons":{"unknown":{"type":"none"}}}}}"#)
+            try rejects(#"{"profiles":{"Bad":{"apps":["com.example.app"],"buttons":{"a":{"type":"key","key":"typo"}}}}}"#)
         }
         try check("switchers require modifiers and decode release-selection bindings") {
             let config = try decode(#"{"buttons":{"rightTrigger":{"type":"switcher","key":"tab","modifiers":["command"]}}}"#)
