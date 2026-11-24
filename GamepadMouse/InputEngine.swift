@@ -1,9 +1,10 @@
 import AppKit
 import Combine
+import Darwin
 import Foundation
 import GameController
 
-/// Poll controller state at 60 Hz; file I/O happens only on load or UI edits.
+/// Poll controller state at 60 Hz; configuration file I/O is event-driven and stays outside the input loop.
 final class InputEngine: ObservableObject {
     weak var mergePollCoordinator: GlobalKeyboardManager?
     @Published var isEnabled = true
@@ -32,6 +33,8 @@ final class InputEngine: ObservableObject {
     private var mergedPollFrameIndex = 0
     private var terminationObserver: NSObjectProtocol?
     private var applicationObserver: NSObjectProtocol?
+    private var configurationDirectorySource: DispatchSourceFileSystemObject?
+    private var pendingConfigurationReload: DispatchWorkItem?
 
     var configurationURL: URL { configFile.url }
     var pointerSensitivity: Double {
@@ -70,9 +73,12 @@ final class InputEngine: ObservableObject {
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.stopTimer() }
+        startConfigurationWatcher()
     }
 
     deinit {
+        pendingConfigurationReload?.cancel()
+        configurationDirectorySource?.cancel()
         if let terminationObserver { NotificationCenter.default.removeObserver(terminationObserver) }
         if let applicationObserver { NSWorkspace.shared.notificationCenter.removeObserver(applicationObserver) }
         stopTimer()
@@ -87,6 +93,41 @@ final class InputEngine: ObservableObject {
             configurationError = nil
         } catch {
             configurationError = "Could not load config: \(error.localizedDescription). Previous mapping kept."
+        }
+    }
+
+    private func startConfigurationWatcher() {
+        let directory = configFile.url.deletingLastPathComponent()
+        let descriptor = open(directory.path, O_EVTONLY)
+        guard descriptor >= 0 else { return }
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: descriptor,
+            eventMask: [.write, .rename, .delete],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in self?.scheduleConfigurationReload() }
+        source.setCancelHandler { close(descriptor) }
+        source.resume()
+        configurationDirectorySource = source
+    }
+
+    private func scheduleConfigurationReload() {
+        pendingConfigurationReload?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.reloadConfigurationIfChanged() }
+        pendingConfigurationReload = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250), execute: work)
+    }
+
+    private func reloadConfigurationIfChanged() {
+        do {
+            guard let next = try configFile.loadIfChanged() else { return }
+            // Keep held actions in activeButtons. Their releases still match the action
+            // that began before the new mapping, while new presses use this configuration.
+            configuration = next
+            resolveActiveProfile()
+            configurationError = nil
+        } catch {
+            configurationError = "Could not live-reload config: \(error.localizedDescription). Previous mapping kept."
         }
     }
 

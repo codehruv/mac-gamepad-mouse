@@ -7,8 +7,10 @@
 **This fork adds [JSON configuration](CONFIGURATION.md)** for stick assignments,
 button shortcuts, clicks, tuning and macOS Dictation. Build this version with
 `sh scripts/build.sh`; launch `build/GamepadMouse.app`, then use **Open Config**
-and **Reload Config**. The upstream `dist/` binary does not include these changes.
-See [config.example.json](config.example.json) for the desktop defaults. The
+to edit mappings; saved changes reload automatically. **Reload Config** remains a
+manual fallback. The upstream `dist/` binary does not include these changes.
+See [config.example.json](config.example.json) for the desktop defaults. Saved
+external edits live-reload after validation; invalid edits keep the last good mapping. The
 original upstream instructions follow; its button defaults differ from this fork.
 
 

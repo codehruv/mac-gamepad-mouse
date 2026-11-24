@@ -219,7 +219,24 @@ struct ConfigurationChecks {
             try expect(Data(contentsOf: url) == edited)
             try expect(file.load().pointerSensitivity == 2300)
         }
-        try check("invalid JSON is never replaced by defaults") {
+        try check("live reload ignores unchanged bytes and accepts a valid external edit") {
+            try expect(try file.loadIfChanged() == nil)
+            let edited = Data(#"{"pointerSensitivity":2100}"#.utf8)
+            try edited.write(to: url, options: .atomic)
+            try expect(try file.loadIfChanged()?.pointerSensitivity == 2100)
+            try expect(try file.loadIfChanged() == nil)
+        }
+        try check("missing live config preserves the last good mapping") {
+            try FileManager.default.removeItem(at: url)
+            do {
+                _ = try file.loadIfChanged()
+                throw ConfigurationError(message: "Missing live config was accepted")
+            } catch let error as ConfigurationError {
+                try expect(error.message.contains("missing"))
+            }
+            try expect(!FileManager.default.fileExists(atPath: url.path))
+        }
+        try check("invalid live edit is rejected and a later correction loads") {
             let invalid = Data("{broken".utf8)
             try invalid.write(to: url)
             do {
@@ -227,6 +244,9 @@ struct ConfigurationChecks {
                 throw ConfigurationError(message: "Invalid JSON loaded")
             } catch is DecodingError {}
             try expect(Data(contentsOf: url) == invalid)
+            let corrected = Data(#"{"pointerSensitivity":1900}"#.utf8)
+            try corrected.write(to: url, options: .atomic)
+            try expect(try file.loadIfChanged()?.pointerSensitivity == 1900)
         }
         try check("disabled or newly connected held buttons cannot fire") {
             var state = ButtonState()

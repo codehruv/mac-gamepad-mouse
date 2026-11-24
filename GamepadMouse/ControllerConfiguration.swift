@@ -287,6 +287,20 @@ final class ConfigurationFile {
         return configuration
     }
 
+    /// Load an external edit only when its bytes differ from the last valid load/save.
+    /// Missing or invalid files never replace the last good in-memory configuration.
+    func loadIfChanged() throws -> ControllerConfiguration? {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw ConfigurationError(message: "Config file is missing. Previous mapping kept.")
+        }
+        let data = try Data(contentsOf: url)
+        guard data != loadedData else { return nil }
+        let configuration = try JSONDecoder().decode(ControllerConfiguration.self, from: data)
+        try configuration.validate()
+        loadedData = data
+        return configuration
+    }
+
     func save(_ configuration: ControllerConfiguration) throws {
         guard let loadedData, try Data(contentsOf: url) == loadedData else {
             throw ConfigurationError(message: "Config changed on disk. Reload Config before saving slider changes.")

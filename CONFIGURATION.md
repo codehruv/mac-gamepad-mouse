@@ -1,10 +1,13 @@
 # JSON controller configuration
 
 Gamepad Mouse creates `~/.config/gamepad-mouse/config.json` on first launch.
-Use **Open Config** in the Controls section, save your edits, then choose
-**Reload Config** or press **Cmd+R** while the app is focused. No rebuild is
-needed for mappings. [config.example.json](config.example.json) is the desktop
-layout shipped by this fork.
+Use **Open Config** in the Controls section and save your edits. The app watches
+the containing directory and applies valid changes automatically after a short
+debounce, including atomic file replacements made by editors. An incomplete or
+invalid save keeps the previous mapping active and shows an error until a valid
+edit arrives. **Reload Config** and **Cmd+R** remain manual fallbacks. No rebuild
+is needed for mappings. [config.example.json](config.example.json) is the
+desktop layout shipped by this fork.
 The same controls live in the **Controller** menu, and closing the settings
 window keeps controller mapping running. Quitting the app releases held inputs.
 
