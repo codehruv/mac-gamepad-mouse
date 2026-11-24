@@ -35,7 +35,6 @@ struct ContentView: View {
             if trusted {
                 inputEngine.onEnabledChanged()
             } else {
-                inputEngine.isEnabled = false
                 inputEngine.stopTimer()
             }
             syncSyntheticInputActivity()

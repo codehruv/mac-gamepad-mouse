@@ -8,8 +8,10 @@ layout shipped by this fork.
 The same controls live in the **Controller** menu, and closing the settings
 window keeps controller mapping running. Quitting the app releases held inputs.
 
-The controller starts disabled. Enable it in the app after granting Accessibility
-permission. Quit Controlly or disable its mappings before enabling this app so
+Controller mapping starts enabled on each launch, once Accessibility permission
+is available. Turning it off pauses the current session; relaunching enables it
+again. Add the installed app in macOS Login Items to start it when you sign in.
+Quit Controlly or disable its mappings before enabling this app so
 one press produces one action. Use Show keyboard / Hide keyboard in the app for
 the floating keyboard. Automatic opening on text focus starts off so it does not
 interrupt desktop shortcuts or dictation. L3 sends Dictation instead.
@@ -25,9 +27,10 @@ interrupt desktop shortcuts or dictation. L3 sends Dictation instead.
 | Square / X | Right click |
 | Triangle / Y | Enter |
 | D-pad | Arrow keys; hold to repeat |
-| L1 / R1 | Cmd+[ / Cmd+] (back / forward where supported) |
+| L1 | Cmd+[ (back where supported) |
+| R1 | Hold Ctrl+Tab; release to select (app-dependent preview) |
 | L2 | Toggle Dictation shortcut |
-| R2 | Cmd+Tab (switch between recent apps) |
+| R2 | Hold Cmd+Tab; release to select an app |
 | Options / Menu | Cmd+Space (Spotlight) |
 | Create / View | Ctrl+Up (Mission Control with macOS default shortcut) |
 | L3 | Toggle Dictation shortcut |
@@ -90,12 +93,21 @@ This sends one Cmd+Shift+C tap when pressed. Supported modifiers are `command`,
 `option`, `control`, and `shift`. Keys include letters, digits, US punctuation,
 `enter`/`return`, `escape`, `space`, `tab`, `backspace`, `delete` (forward delete),
 `left`, `right`, `up`, `down`, `home`, `end`, `pageup`, `pagedown`, and `f1`–`f20`.
-Key names refer to physical US keyboard positions. Modifier-only holds, macros,
+Key names refer to physical US keyboard positions. Standalone modifier holds, macros,
 layers, hold-to-talk, and per-app profiles are not implemented.
 
 Use `{"type":"mouse","button":"left"}` for a held left click (`right` and
 `middle` also work), or `{"type":"dictation"}` for the dictation shortcut below.
 Several inputs can share one mouse button without releasing each other's hold.
+
+Use `{"type":"switcher","key":"tab","modifiers":["command"]}` for an app
+switcher, or `["control"]` for tab switching. Pressing holds the modifier and taps
+Tab once; after 0.45 seconds, holding advances every 0.18 seconds. Releasing the
+button releases the modifier to confirm. A quick press selects one step. Ctrl+Tab
+previews depend on the target app; some apps change tabs immediately. Only one
+switcher runs at a time to avoid mixing Command and Control chords. Use `key`
+instead of `switcher` to retain an immediate shortcut tap. Disable, disconnect,
+reload, controller changes and quit release held modifiers and stop repeats.
 
 ## macOS Dictation
 

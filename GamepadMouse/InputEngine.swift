@@ -6,7 +6,7 @@ import GameController
 /// Poll controller state at 60 Hz; file I/O happens only on load or UI edits.
 final class InputEngine: ObservableObject {
     weak var mergePollCoordinator: GlobalKeyboardManager?
-    @Published var isEnabled = false
+    @Published var isEnabled = true
     @Published private(set) var configuration = ControllerConfiguration()
     @Published private(set) var configurationError: String?
     @Published private(set) var lastTickSummary = ""
@@ -83,7 +83,6 @@ final class InputEngine: ObservableObject {
 
     func updateAccessibilityTrustState() {
         if !AccessibilityGate.isTrusted {
-            isEnabled = false
             stopTimer()
         }
     }
@@ -117,7 +116,7 @@ final class InputEngine: ObservableObject {
     func onEnabledChanged() { startStopTimerIfNeeded() }
 
     private func tick() {
-        guard isEnabled, AccessibilityGate.isTrusted else { return }
+        guard isEnabled, AccessibilityGate.isTrusted else { stopTimer(); return }
         mergedPollFrameIndex += 1
         let controller = controllerService.selectedController
         let pad = controller?.extendedGamepad
@@ -165,16 +164,19 @@ final class InputEngine: ObservableObject {
         for id in changes.released.sorted() { releaseButton(id) }
         for id in changes.pressed.sorted() {
             guard let action = configuration.buttons[id] else { continue }
+            // App/tab switchers cannot own conflicting modifier chords together.
+            if action.type == .switcher && activeButtons.values.contains(where: { $0.type == .switcher }) { continue }
             activeButtons[id] = action
-            pressAction(action)
-            if id.hasPrefix("dpad"), action.type == .key {
-                repeatDeadline[id] = now.addingTimeInterval(0.35)
+            pressAction(action, owner: id)
+            if (id.hasPrefix("dpad") && action.type == .key) || action.type == .switcher {
+                repeatDeadline[id] = now.addingTimeInterval(action.type == .switcher ? 0.45 : 0.35)
             }
         }
         for id in Array(repeatDeadline.keys) {
             if let deadline = repeatDeadline[id], now >= deadline, let action = activeButtons[id] {
-                pressAction(action)
-                repeatDeadline[id] = now.addingTimeInterval(0.08)
+                if action.type == .switcher, let shortcut = action.shortcut { keyboard.tapShortcut(shortcut) }
+                else { pressAction(action, owner: id) }
+                repeatDeadline[id] = now.addingTimeInterval(action.type == .switcher ? 0.18 : 0.08)
             }
         }
         let summary = activeButtons.keys.sorted().joined(separator: ", ")
@@ -221,7 +223,7 @@ final class InputEngine: ObservableObject {
         return Set(values.filter { $0.1 }.map { $0.0 })
     }
 
-    private func pressAction(_ action: ButtonAction) {
+    private func pressAction(_ action: ButtonAction, owner: String) {
         switch action.type {
         case .mouse:
             guard let button = action.button else { return }
@@ -229,6 +231,8 @@ final class InputEngine: ObservableObject {
             if count == 1 { postMouse(button, down: true) }
         case .key:
             if let shortcut = action.shortcut { keyboard.tapShortcut(shortcut) }
+        case .switcher:
+            if let shortcut = action.shortcut { keyboard.beginSwitcher(owner: owner, shortcut: shortcut) }
         case .dictation: keyboard.tapShortcut(configuration.dictation)
         case .none: break
         }
@@ -236,7 +240,9 @@ final class InputEngine: ObservableObject {
 
     private func releaseButton(_ id: String) {
         repeatDeadline[id] = nil
-        guard let action = activeButtons.removeValue(forKey: id), action.type == .mouse,
+        guard let action = activeButtons.removeValue(forKey: id) else { return }
+        if action.type == .switcher { keyboard.endSwitcher(owner: id) }
+        guard action.type == .mouse,
               let button = action.button else { return }
         if !activeButtons.values.contains(where: { $0.type == .mouse && $0.button == button }) {
             postMouse(button, down: false)
@@ -252,6 +258,7 @@ final class InputEngine: ObservableObject {
     }
 
     private func releaseAllButtons() {
+        keyboard.releaseAllModifiers()
         for button in [MouseBinding.left, .right, .middle] {
             if activeButtons.values.contains(where: { $0.type == .mouse && $0.button == button }) {
                 postMouse(button, down: false)

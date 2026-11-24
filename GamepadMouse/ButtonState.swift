@@ -1,5 +1,29 @@
 import Foundation
 
+/// Ownership prevents one input from releasing modifiers still held by another.
+struct ModifierHolds {
+    private var owners: [String: Set<ShortcutModifier>] = [:]
+    var held: Set<ShortcutModifier> { owners.values.reduce(into: []) { $0.formUnion($1) } }
+
+    mutating func acquire(owner: String, modifiers: [ShortcutModifier]) -> [ShortcutModifier] {
+        let before = held
+        owners[owner] = Set(modifiers)
+        return ShortcutModifier.allCases.filter { held.contains($0) && !before.contains($0) }
+    }
+
+    mutating func release(owner: String) -> [ShortcutModifier] {
+        let before = held
+        owners[owner] = nil
+        return ShortcutModifier.allCases.reversed().filter { before.contains($0) && !held.contains($0) }
+    }
+
+    mutating func releaseAll() -> [ShortcutModifier] {
+        let before = held
+        owners.removeAll()
+        return ShortcutModifier.allCases.reversed().filter { before.contains($0) }
+    }
+}
+
 /// DualSense USB/Bluetooth wire layout; only full input reports carry Edge extras.
 /// Protocol reference: Sony's hid-playstation driver in the Linux kernel.
 struct DualSenseReport {

@@ -78,6 +78,8 @@ struct GamepadMouseApp: App {
         _gamepadUIState = StateObject(wrappedValue: ui)
         _keyboardManager = StateObject(wrappedValue: km)
         _inputEngine = StateObject(wrappedValue: ie)
+        ie.startStopTimerIfNeeded()
+        SyntheticInputActivity.setActive(ie.isEnabled && AccessibilityGate.isTrusted)
     }
 
     var body: some Scene {

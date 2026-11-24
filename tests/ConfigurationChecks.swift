@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 @main
 struct ConfigurationChecks {
@@ -42,6 +43,51 @@ struct ConfigurationChecks {
             let original = ControllerConfiguration()
             let decoded = try JSONDecoder().decode(ControllerConfiguration.self, from: original.encoded())
             try expect(decoded == original)
+        }
+        try check("switchers require modifiers and decode release-selection bindings") {
+            let config = try decode(#"{"buttons":{"rightTrigger":{"type":"switcher","key":"tab","modifiers":["command"]}}}"#)
+            try expect(config.buttons["rightTrigger"]?.type == .switcher)
+            try expect(ControllerConfiguration().buttons["rightShoulder"]?.type == .switcher)
+            try rejects(#"{"buttons":{"rightTrigger":{"type":"switcher","key":"tab"}}}"#)
+            try rejects(#"{"buttons":{"rightTrigger":{"type":"switcher","key":"unknown","modifiers":["command"]}}}"#)
+        }
+        try check("modifier ownership is idempotent and releases only the last owner") {
+            var holds = ModifierHolds()
+            try expect(holds.acquire(owner: "r2", modifiers: [.command]) == [.command])
+            try expect(holds.acquire(owner: "r2", modifiers: [.command]).isEmpty)
+            try expect(holds.acquire(owner: "another", modifiers: [.command]).isEmpty)
+            try expect(holds.release(owner: "r2").isEmpty && holds.held == [.command])
+            try expect(holds.release(owner: "another") == [.command] && holds.held.isEmpty)
+        }
+        try check("switcher holds Command through Tab repeats and releases it to confirm") {
+            var events: [CGEvent] = []
+            let injector = KeyboardInjector { events.append($0) }
+            let shortcut = KeyShortcut(key: "tab", modifiers: [.command])
+            injector.beginSwitcher(owner: "r2", shortcut: shortcut)
+            injector.tapShortcut(shortcut)
+            try expect(events.map(\.type) == [.flagsChanged, .keyDown, .keyUp, .keyDown, .keyUp])
+            try expect(events.allSatisfy { $0.flags.contains(.maskCommand) })
+            try expect(events.dropFirst().allSatisfy { $0.getIntegerValueField(.keyboardEventKeycode) == 48 })
+            injector.endSwitcher(owner: "r2")
+            try expect(events.last?.type == .flagsChanged)
+            try expect(events.last?.getIntegerValueField(.keyboardEventKeycode) == 55)
+            try expect(events.last?.flags.contains(.maskCommand) == false)
+            let count = events.count
+            injector.endSwitcher(owner: "r2")
+            try expect(events.count == count)
+        }
+        try check("reload/disconnect cleanup releases every modifier without more Tab presses") {
+            var events: [CGEvent] = []
+            let injector = KeyboardInjector { events.append($0) }
+            injector.beginSwitcher(owner: "r1", shortcut: .init(key: "tab", modifiers: [.control, .shift]))
+            let before = events.count
+            injector.releaseAllModifiers()
+            let cleanup = Array(events.dropFirst(before))
+            try expect(cleanup.count == 2 && cleanup.allSatisfy { $0.type == .flagsChanged })
+            try expect(events.last?.flags.intersection([.maskControl, .maskShift]).isEmpty == true)
+            let count = events.count
+            injector.releaseAllModifiers()
+            try expect(events.count == count)
         }
         try check("documented example matches shipped desktop defaults") {
             let example = try String(contentsOfFile: "config.example.json", encoding: .utf8)

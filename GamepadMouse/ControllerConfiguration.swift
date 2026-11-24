@@ -20,7 +20,7 @@ struct StickBinding: Codable, Equatable {
     }
 }
 
-enum ShortcutModifier: String, Codable { case command, option, control, shift }
+enum ShortcutModifier: String, Codable, Hashable, CaseIterable { case command, option, control, shift }
 
 struct TouchpadConfiguration: Codable, Equatable {
     var enabled = true
@@ -75,7 +75,7 @@ struct KeyShortcut: Codable, Equatable {
 }
 
 enum MouseBinding: String, Codable { case left, right, middle }
-enum ActionType: String, Codable { case mouse, key, dictation, none }
+enum ActionType: String, Codable { case mouse, key, switcher, dictation, none }
 
 struct ButtonAction: Codable, Equatable {
     var type: ActionType
@@ -108,6 +108,7 @@ struct ButtonAction: Codable, Equatable {
         switch type {
         case .mouse: return "\(button?.rawValue.capitalized ?? "?") click / hold"
         case .key: return shortcut?.label ?? "Missing key"
+        case .switcher: return "\(shortcut?.label ?? "Missing key") — select on release"
         case .dictation: return "Toggle Dictation"
         case .none: return "Disabled"
         }
@@ -142,9 +143,9 @@ struct ControllerConfiguration: Codable, Equatable {
         "x": .init(type: .mouse, button: .right),
         "y": .init(type: .key, key: "enter"),
         "leftShoulder": .init(type: .key, key: "[", modifiers: [.command]),
-        "rightShoulder": .init(type: .key, key: "]", modifiers: [.command]),
+        "rightShoulder": .init(type: .switcher, key: "tab", modifiers: [.control]),
         "leftTrigger": .init(type: .dictation),
-        "rightTrigger": .init(type: .key, key: "tab", modifiers: [.command]),
+        "rightTrigger": .init(type: .switcher, key: "tab", modifiers: [.command]),
         "menu": .init(type: .key, key: "space", modifiers: [.command]),
         "options": .init(type: .key, key: "up", modifiers: [.control]),
         "rightStick": .init(type: .mouse, button: .middle),
@@ -193,9 +194,12 @@ struct ControllerConfiguration: Codable, Equatable {
             case .mouse:
                 try require(action.button != nil && action.key == nil && action.modifiers.isEmpty,
                             "\(id): mouse needs button (left/right/middle), without key or modifiers.")
-            case .key:
+            case .key, .switcher:
                 try require(action.shortcut?.keyCode != nil && action.button == nil,
                             "\(id): key needs a supported key name, without a mouse button.")
+                if action.type == .switcher {
+                    try require(!action.modifiers.isEmpty, "\(id): switcher requires at least one modifier.")
+                }
             case .dictation, .none:
                 try require(action.button == nil && action.key == nil && action.modifiers.isEmpty,
                             "\(id): \(action.type.rawValue) does not take button, key or modifiers.")

@@ -16,7 +16,7 @@ original upstream instructions follow; its button defaults differ from this fork
 
 1. **Get the app:** Clone or **Download ZIP** → copy **`dist/GamepadMouse.app`** into **`/Applications`** → open it. If macOS blocks it: **right-click → Open** once.
 2. **Permission:** **System Settings → Privacy & Security → Accessibility** (macOS 13+) — or **System Preferences → Security & Privacy → Privacy → Accessibility** (macOS 12) — enable **Gamepad Mouse**.
-3. **Use it:** Pair your gamepad (Bluetooth or USB), launch the app, turn on **Enable mouse control**.
+3. **Use it:** Pair your gamepad (Bluetooth or USB) and launch the app. Controller mapping starts enabled once Accessibility permission is available. Add the installed app to macOS Login Items to start it when you sign in.
 
 **macOS 12+.** **No Xcode** needed for the pre-built app in `dist/`.
 
@@ -40,7 +40,7 @@ A pre-built universal **Release** app (`x86_64` + `arm64`) is checked in at **`d
 2. Copy **`dist/GamepadMouse.app`** into **`/Applications`** (drag in Finder or duplicate the folder).
 3. Open **Gamepad Mouse** from Applications. If Gatekeeper complains about an unidentified developer, **right-click the app → Open** the first time and confirm.
 4. Grant **Accessibility** (see above): unlock, enable **Gamepad Mouse**, then quit and reopen the app if macOS asks you to.
-5. Pair your gamepad (Bluetooth or USB) and turn on **Enable mouse control** in the app. Use the **Test** tab to verify clicks and scrolling.
+5. Pair your gamepad (Bluetooth or USB); mapping starts enabled. Use the **Test** tab to verify clicks and scrolling.
 
 You do **not** need Xcode for this path.
 

@@ -130,7 +130,7 @@ struct TestSurfaceView: View {
                 if showDebugInfo {
                     Text(
                         "With Auto-show keyboard enabled on the Control tab, focusing this field (or a field in another app) can open the floating keyboard. "
-                            + "L3 toggles the keyboard anytime."
+                            + "L3 toggles Dictation. Use Show keyboard in the Control tab for the floating keyboard."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
