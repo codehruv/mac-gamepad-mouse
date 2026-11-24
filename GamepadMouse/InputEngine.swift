@@ -20,6 +20,10 @@ final class InputEngine: ObservableObject {
     private var lastTickTime: Date?
     private var lastController: ObjectIdentifier?
     private var buttonState = ButtonState()
+    private var touchpadState = TouchpadScrollState()
+    private var touchpad: GCControllerTouchpad?
+    private let dualSenseInput = DualSenseInput()
+    @Published private(set) var extraInputStatus = ""
     private var activeButtons: [String: ButtonAction] = [:]
     private var repeatDeadline: [String: Date] = [:]
     private var mergedPollFrameIndex = 0
@@ -121,6 +125,7 @@ final class InputEngine: ObservableObject {
 
         guard let controller, let pad else {
             releaseAllButtons()
+            touchpad = nil
             lastController = nil
             lastTickTime = nil
             setLastTickSummary("No extended gamepad")
@@ -131,6 +136,7 @@ final class InputEngine: ObservableObject {
             releaseAllButtons()
             lastTickTime = nil
             lastController = identity
+            touchpad = controller.physicalInputProfile.touchpads.sorted { $0.key < $1.key }.first?.value
         }
         let now = Date()
         let dt = lastTickTime.map { min(max(now.timeIntervalSince($0), 1.0 / 240.0), 0.1) } ?? 1.0 / 60.0
@@ -143,7 +149,19 @@ final class InputEngine: ObservableObject {
             setLastTickSummary("Virtual keyboard owns buttons")
             return
         }
-        let changes = buttonState.update(pressedButtons(pad))
+        let edgeReport = dualSenseInput.snapshot(for: controller)
+        let extraStatus = edgeReport == nil ? "" : "DualSense Edge paddles and touchpad connected"
+        if extraInputStatus != extraStatus { extraInputStatus = extraStatus }
+        if let edgeReport {
+            let dy = touchpadState.update(y: edgeReport.y, touching: edgeReport.touching,
+                                         configuration: configuration.touchpad)
+            if dy != 0 { mouse.scrollPixels(deltaY: CGFloat(dy), deltaX: 0) }
+        } else if let touchpad {
+            let dy = touchpadState.update(y: Double(touchpad.touchSurface.yAxis.value),
+                touching: touchpad.touchState != .up, configuration: configuration.touchpad)
+            if dy != 0 { mouse.scrollPixels(deltaY: CGFloat(dy), deltaX: 0) }
+        }
+        let changes = buttonState.update(pressedButtons(pad).union(edgeReport?.buttons ?? []))
         for id in changes.released.sorted() { releaseButton(id) }
         for id in changes.pressed.sorted() {
             guard let action = configuration.buttons[id] else { continue }
@@ -180,16 +198,26 @@ final class InputEngine: ObservableObject {
     }
 
     private func pressedButtons(_ pad: GCExtendedGamepad) -> Set<String> {
-        let values: [(String, Bool)] = [
+        var values: [(String, Bool)] = [
             ("a", pad.buttonA.isPressed), ("b", pad.buttonB.isPressed),
             ("x", pad.buttonX.isPressed), ("y", pad.buttonY.isPressed),
             ("leftShoulder", pad.leftShoulder.isPressed), ("rightShoulder", pad.rightShoulder.isPressed),
             ("leftTrigger", pad.leftTrigger.isPressed), ("rightTrigger", pad.rightTrigger.isPressed),
             ("menu", pad.buttonMenu.isPressed), ("options", pad.buttonOptions?.isPressed == true),
             ("home", pad.buttonHome?.isPressed == true), ("rightStick", pad.rightThumbstickButton?.isPressed == true),
+            ("leftStick", pad.leftThumbstickButton?.isPressed == true),
             ("dpadUp", pad.dpad.up.isPressed), ("dpadDown", pad.dpad.down.isPressed),
-            ("dpadLeft", pad.dpad.left.isPressed), ("dpadRight", pad.dpad.right.isPressed)
+            ("dpadLeft", pad.dpad.left.isPressed), ("dpadRight", pad.dpad.right.isPressed),
+            ("touchpad", touchpad?.button.isPressed == true)
         ]
+        if #available(macOS 14.4, *) {
+            values += [
+                ("backLeft", pad.buttons[__GCInputBackLeftButton(0)?.rawValue ?? ""]?.isPressed == true),
+                ("backRight", pad.buttons[__GCInputBackRightButton(0)?.rawValue ?? ""]?.isPressed == true),
+                ("backLeft2", pad.buttons[__GCInputBackLeftButton(1)?.rawValue ?? ""]?.isPressed == true),
+                ("backRight2", pad.buttons[__GCInputBackRightButton(1)?.rawValue ?? ""]?.isPressed == true)
+            ]
+        }
         return Set(values.filter { $0.1 }.map { $0.0 })
     }
 
@@ -232,6 +260,7 @@ final class InputEngine: ObservableObject {
         activeButtons.removeAll()
         repeatDeadline.removeAll()
         buttonState.reset()
+        touchpadState.reset()
     }
 
     private func setLastTickSummary(_ text: String) {

@@ -167,7 +167,10 @@ struct ContentView: View {
             Toggle("Auto-show keyboard when a text field is focused", isOn: $keyboardManager.autoShowOnTextFocus)
                 .disabled(!accessibilityTrusted)
 
-            Text("Press L3 (left stick click) anytime to show or hide the floating keyboard.")
+            Button(keyboardManager.isPanelVisible ? "Hide keyboard" : "Show keyboard") {
+                keyboardManager.togglePanel()
+            }
+            Text("L3 (left stick click) toggles Dictation by default; remap it as buttons.leftStick in JSON.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -249,13 +252,15 @@ struct ContentView: View {
             Text(inputEngine.configurationURL.path)
                 .font(.caption)
                 .textSelection(.enabled)
+            if !inputEngine.extraInputStatus.isEmpty {
+                Text(inputEngine.extraInputStatus).font(.caption).foregroundStyle(.secondary)
+            }
             if let error = inputEngine.configurationError {
                 Text(error).font(.caption).foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
             VStack(alignment: .leading, spacing: 10) {
                 mappingRow("Left stick", inputEngine.configuration.leftStick.mode.rawValue.capitalized)
-                mappingRow("L3 (stick click)", "Toggle virtual keyboard")
                 mappingRow("Right stick", inputEngine.configuration.rightStick.mode.rawValue.capitalized)
                 ForEach(inputEngine.configuration.buttons.keys.sorted(), id: \.self) { id in
                     mappingRow(id, inputEngine.configuration.buttons[id]?.label ?? "Disabled")

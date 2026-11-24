@@ -80,10 +80,9 @@ final class GlobalKeyboardManager: ObservableObject {
     private var panelCloseForwarder: KeyboardPanelCloseForwarder?
     private var auxTimer: Timer?
 
-    private var l3WasDown = false
     private var focusPollCounter = 0
     private var lastSawTextCapableFocus = false
-    /// If true, leaving a text field will auto-hide. L3-opened panels keep this false.
+    /// If true, leaving a text field will auto-hide. Manually opened panels keep this false.
     private var hideWhenFocusLeavesTextField = false
     /// After the user closes the panel while still in a text field, don’t auto-open again until focus leaves text-capable UI (avoids reopen loop).
     private var suppressAutoReopenUntilTextBlur = false
@@ -123,7 +122,7 @@ final class GlobalKeyboardManager: ObservableObject {
         panelWindow?.orderFrontRegardless()
     }
 
-    /// - Parameter userInitiated: `true` for L3, Close, or window close. `false` when the panel is hidden because focus left a text field (auto-dismiss).
+    /// - Parameter userInitiated: `true` for Close or window close. `false` for focus-driven auto-dismiss.
     func hidePanel(userInitiated: Bool = true) {
         hideWhenFocusLeavesTextField = false
         if userInitiated {
@@ -175,22 +174,14 @@ final class GlobalKeyboardManager: ObservableObject {
         auxTimer = nil
     }
 
-    /// Restarts aux polling when mouse control turns off (L3 + auto-show still needed).
+    /// Restarts focus polling when mouse control turns off.
     func inputEngineMainTimerStopped() {
         startAuxiliaryPolling()
     }
 
-    /// Folded into `InputEngine`’s 60 Hz tick: L3 every frame, Accessibility focus poll ~5 Hz (every 12 frames).
+    /// Folded into `InputEngine`’s 60 Hz tick: Accessibility focus poll ~5 Hz.
     func onInputEngineTimerTick(frameIndex: Int, extendedGamepad: GCExtendedGamepad?) {
         guard AccessibilityGate.isTrusted else { return }
-
-        if let pad = extendedGamepad {
-            let l3 = pad.leftThumbstickButton?.isPressed == true
-            if l3 && !l3WasDown {
-                togglePanel()
-            }
-            l3WasDown = l3
-        }
 
         guard autoShowOnTextFocus else { return }
         guard frameIndex % 12 == 0 else { return }
@@ -218,14 +209,6 @@ final class GlobalKeyboardManager: ObservableObject {
 
     private func auxTick() {
         guard AccessibilityGate.isTrusted else { return }
-
-        if let pad = controllerService.selectedController?.extendedGamepad {
-            let l3 = pad.leftThumbstickButton?.isPressed == true
-            if l3 && !l3WasDown {
-                togglePanel()
-            }
-            l3WasDown = l3
-        }
 
         guard autoShowOnTextFocus else { return }
 

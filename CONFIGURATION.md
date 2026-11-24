@@ -10,9 +10,9 @@ window keeps controller mapping running. Quitting the app releases held inputs.
 
 The controller starts disabled. Enable it in the app after granting Accessibility
 permission. Quit Controlly or disable its mappings before enabling this app so
-one press produces one action. The floating keyboard opens with L3; automatic
-opening on text focus starts off so it does not interrupt desktop shortcuts or
-dictation.
+one press produces one action. Use Show keyboard / Hide keyboard in the app for
+the floating keyboard. Automatic opening on text focus starts off so it does not
+interrupt desktop shortcuts or dictation. L3 sends Dictation instead.
 
 ## Default desktop layout
 
@@ -30,14 +30,26 @@ dictation.
 | R2 | Cmd+Tab (switch between recent apps) |
 | Options / Menu | Cmd+Space (Spotlight) |
 | Create / View | Ctrl+Up (Mission Control with macOS default shortcut) |
-| L3 | Toggle virtual keyboard (reserved) |
+| L3 | Toggle Dictation shortcut |
 | R3 | Middle click |
+| Left / right back paddle | Cmd+C / Cmd+V (copy / paste) |
+| Touchpad swipe up / down | Vertical scrolling |
 
 Inputs use Apple's extended gamepad names, not a vendor/product ID. On a
 PlayStation controller `a`, `b`, `x`, `y` mean Cross, Circle, Square, Triangle.
 `menu` is Options and `options` is Create. Button availability depends on the
-controller and macOS; the Home/PS button may be intercepted by macOS. Unlisted
-extra controls such as paddles and touchpads do not yet have bindings.
+controller and macOS; the Home/PS button may be intercepted by macOS. Generic
+back buttons require macOS 14.4+ and must be exposed by the controller's profile.
+The DualSense Edge uses a nonexclusive, controller-only HID reader for paddles
+and touch contacts omitted by Apple's GameController profile. USB and full
+Bluetooth reports are supported. With multiple Edge controllers connected,
+this fallback is disabled to avoid mixing devices. Other controllers that mirror
+paddles onto face buttons cannot supply separate bindings through this API.
+
+The touchpad scrolls while a finger moves, with no scroll on first contact or
+finger lift. `touchpad` accepts `enabled` (default true), `scrollSensitivity`
+(50–3000 pixels per normalized unit, default 600), and `invertY` (default false).
+For example: `"touchpad": {"enabled": true, "scrollSensitivity": 600, "invertY": false}`.
 
 ## Sticks and tuning
 
@@ -57,11 +69,14 @@ externally, sliders refuse to overwrite those edits until you reload.
 `buttons` is a dictionary of input names to actions. Omitting `buttons` entirely
 uses the default desktop bindings; supplying it replaces the whole dictionary.
 An empty `{}` disables all configurable buttons. An omitted button or an action
-of `{"type":"none"}` does nothing. L3 still controls the virtual keyboard.
+of `{"type":"none"}` does nothing.
 
 The supported names are `a`, `b`, `x`, `y`, `leftShoulder`, `rightShoulder`,
-`leftTrigger`, `rightTrigger`, `menu`, `options`, `home`, `rightStick`, `dpadUp`,
-`dpadDown`, `dpadLeft`, and `dpadRight`.
+`leftTrigger`, `rightTrigger`, `menu`, `options`, `home`, `leftStick` (L3), `rightStick`, `dpadUp`,
+`dpadDown`, `dpadLeft`, `dpadRight`, `backLeft`, `backRight`, `backLeft2`,
+`backRight2`, and `touchpad` (physical click). The `2` paddle names address the
+second paddle on that side, when present. Existing explicit `buttons` maps need
+the new paddle/L3 entries added; reloading does not merge defaults into your map.
 
 ```json
 {
@@ -89,7 +104,7 @@ In **System Settings → Keyboard → Dictation**, enable Dictation and customiz
 its shortcut to **Ctrl+Option+D**. Alternatively, set the JSON to the shortcut
 already configured on your Mac. Press L2 to start dictating into the focused
 text field, then press it again to stop. This app sends a shortcut; macOS does
-the speech recognition. It does not read the controller microphone or upload
+the speech recognition. L3 also toggles the same shortcut. It does not read the controller microphone or upload
 audio itself. Dictation setup and speech behavior must be checked on your Mac.
 
 ## Reloading and extending

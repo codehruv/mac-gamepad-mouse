@@ -36,6 +36,7 @@ struct ConfigurationChecks {
             let config = try decode("{}")
             try expect(config.leftStick.mode == .mouse && config.rightStick.mode == .scroll)
             try expect(config.buttons["leftTrigger"]?.type == .dictation)
+            try expect(config.buttons["leftStick"]?.type == .dictation)
         }
         try check("default JSON round trips without losing shortcuts") {
             let original = ControllerConfiguration()
@@ -58,6 +59,63 @@ struct ConfigurationChecks {
             try expect(config.dictation.keyCode == 96)
             try expect(config.buttons["y"]?.shortcut?.modifiers == [.command, .shift])
         }
+        try check("back paddles and touchpad bindings decode") {
+            let config = try decode(#"{"buttons":{"backLeft":{"type":"key","key":"c","modifiers":["command"]},"backRight":{"type":"mouse","button":"right"},"backLeft2":{"type":"none"},"touchpad":{"type":"key","key":"enter"}},"touchpad":{"invertY":true}}"#)
+            try expect(config.buttons["backRight"]?.button == .right)
+            try expect(config.touchpad.enabled && config.touchpad.invertY)
+            try expect(config.touchpad.scrollSensitivity == 600)
+        }
+        try check("touchpad config validates types and sensitivity") {
+            for text in [#"{"touchpad":{"scrollSensitivity":0}}"#,
+                         #"{"touchpad":{"scrollSensitivity":3001}}"#,
+                         #"{"touchpad":{"enabled":"yes"}}"#] { try rejects(text) }
+        }
+        try check("USB and Bluetooth Edge reports decode paddles and touch contact") {
+            for (size, id, offset) in [(64, UInt8(1), 1), (78, UInt8(0x31), 2)] {
+                var bytes = [UInt8](repeating: 0, count: size)
+                bytes[0] = id
+                bytes[offset + 9] = 0xc2
+                bytes[offset + 32] = 0x80
+                let lifted = DualSenseReport(bytes: bytes)!
+                try expect(!lifted.touching && lifted.buttons == ["backLeft", "backRight", "touchpad"])
+                bytes[offset + 32] = 1
+                bytes[offset + 34] = 0x70
+                bytes[offset + 35] = 0x43 // y = 1079, bottom of pad
+                let down = DualSenseReport(bytes: bytes)!
+                try expect(down.touching && down.y == -1)
+                bytes[offset + 9] = 0x30 // Fn buttons must not trigger paddles
+                try expect(DualSenseReport(bytes: bytes)!.buttons.isEmpty)
+            }
+            try expect(DualSenseReport(bytes: []) == nil)
+            try expect(DualSenseReport(bytes: [1, 0, 0]) == nil)
+            var wrongID = [UInt8](repeating: 0, count: 64)
+            wrongID[0] = 0x02
+            try expect(DualSenseReport(bytes: wrongID) == nil)
+        }
+        try check("touchpad scroll follows movement including center; lift does not scroll") {
+            var state = TouchpadScrollState()
+            let config = TouchpadConfiguration()
+            try expect(state.update(y: 0, touching: false, configuration: config) == 0)
+            try expect(state.update(y: -0.5, touching: true, configuration: config) == 0)
+            try expect(state.update(y: 0, touching: true, configuration: config) == -300)
+            try expect(state.update(y: 0.5, touching: true, configuration: config) == -300)
+            try expect(state.update(y: 0, touching: false, configuration: config) == 0)
+            try expect(state.update(y: -0.5, touching: true, configuration: config) == 0)
+        }
+        try check("touchpad reset waits for lift; inversion and disable work") {
+            var state = TouchpadScrollState()
+            var config = TouchpadConfiguration()
+            try expect(state.update(y: 0.5, touching: true, configuration: config) == 0)
+            _ = state.update(y: 0, touching: false, configuration: config)
+            _ = state.update(y: 0, touching: true, configuration: config)
+            config.invertY = true
+            try expect(state.update(y: 0.5, touching: true, configuration: config) == 300)
+            config.enabled = false
+            try expect(state.update(y: 1, touching: true, configuration: config) == 0)
+            state.reset()
+            config.enabled = true
+            try expect(state.update(y: 0, touching: true, configuration: config) == 0)
+        }
         try check("reject unsupported schema version") { try rejects(#"{"version":2}"#) }
         try check("reject malformed JSON") { try rejects("{") }
         try check("reject wrong numeric types and unsafe ranges") {
@@ -66,7 +124,7 @@ struct ConfigurationChecks {
         }
         try check("reject unknown stick modes, buttons, keys and modifiers") {
             for text in [#"{"leftStick":{"mode":"moues"}}"#,
-                         #"{"buttons":{"leftStick":{"type":"none"}}}"#,
+                         #"{"buttons":{"unknownButton":{"type":"none"}}}"#,
                          #"{"buttons":{"a":{"type":"key","key":"typo"}}}"#,
                          #"{"dictation":{"key":"d","modifiers":["commnad"]}}"#] { try rejects(text) }
         }

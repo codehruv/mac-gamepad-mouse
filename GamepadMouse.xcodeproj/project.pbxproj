@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A10000000000000000000023 /* DualSenseInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000023 /* DualSenseInput.swift */; };
 		A10000000000000000000021 /* ControllerConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* ControllerConfiguration.swift */; };
 		A10000000000000000000022 /* ButtonState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000022 /* ButtonState.swift */; };
 		A10000000000000000000001 /* GamepadMouseApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* GamepadMouseApp.swift */; };
@@ -27,6 +28,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		B10000000000000000000023 /* DualSenseInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualSenseInput.swift; sourceTree = "<group>"; };
 		B10000000000000000000021 /* ControllerConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerConfiguration.swift; sourceTree = "<group>"; };
 		B10000000000000000000022 /* ButtonState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ButtonState.swift; sourceTree = "<group>"; };
 		B10000000000000000000001 /* GamepadMouseApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GamepadMouseApp.swift; sourceTree = "<group>"; };
@@ -83,6 +85,7 @@
 				B10000000000000000000008 /* InputEngine.swift */,
 				B10000000000000000000021 /* ControllerConfiguration.swift */,
 				B10000000000000000000022 /* ButtonState.swift */,
+				B10000000000000000000023 /* DualSenseInput.swift */,
 				B1000000000000000000000C /* GamepadUIState.swift */,
 				B1000000000000000000000D /* KeyboardInjector.swift */,
 				B1000000000000000000000E /* OnScreenKeyboardView.swift */,
@@ -195,6 +198,7 @@
 				A1000000000000000000000F /* GlobalKeyboardManager.swift in Sources */,
 				A10000000000000000000021 /* ControllerConfiguration.swift in Sources */,
 				A10000000000000000000022 /* ButtonState.swift in Sources */,
+				A10000000000000000000023 /* DualSenseInput.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -22,6 +22,21 @@ struct StickBinding: Codable, Equatable {
 
 enum ShortcutModifier: String, Codable { case command, option, control, shift }
 
+struct TouchpadConfiguration: Codable, Equatable {
+    var enabled = true
+    var scrollSensitivity: Double = 600
+    var invertY = false
+
+    init() {}
+    private enum CodingKeys: String, CodingKey { case enabled, scrollSensitivity, invertY }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? enabled
+        scrollSensitivity = try c.decodeIfPresent(Double.self, forKey: .scrollSensitivity) ?? scrollSensitivity
+        invertY = try c.decodeIfPresent(Bool.self, forKey: .invertY) ?? invertY
+    }
+}
+
 struct KeyShortcut: Codable, Equatable {
     var key: String
     var modifiers: [ShortcutModifier] = []
@@ -108,6 +123,7 @@ struct ControllerConfiguration: Codable, Equatable {
     var version = 1
     var leftStick = StickBinding(mode: .mouse)
     var rightStick = StickBinding(mode: .scroll)
+    var touchpad = TouchpadConfiguration()
     var pointerSensitivity: Double = 1200
     var scrollSpeed: Double = 35
     var deadzone: Double = 0.12
@@ -116,8 +132,9 @@ struct ControllerConfiguration: Codable, Equatable {
 
     static let buttonNames = [
         "a", "b", "x", "y", "leftShoulder", "rightShoulder", "leftTrigger",
-        "rightTrigger", "menu", "options", "home", "rightStick", "dpadUp",
-        "dpadDown", "dpadLeft", "dpadRight"
+        "rightTrigger", "menu", "options", "home", "leftStick", "rightStick", "dpadUp",
+        "dpadDown", "dpadLeft", "dpadRight", "backLeft", "backRight",
+        "backLeft2", "backRight2", "touchpad"
     ]
     static let desktopButtons: [String: ButtonAction] = [
         "a": .init(type: .mouse, button: .left),
@@ -131,6 +148,9 @@ struct ControllerConfiguration: Codable, Equatable {
         "menu": .init(type: .key, key: "space", modifiers: [.command]),
         "options": .init(type: .key, key: "up", modifiers: [.control]),
         "rightStick": .init(type: .mouse, button: .middle),
+        "leftStick": .init(type: .dictation),
+        "backLeft": .init(type: .key, key: "c", modifiers: [.command]),
+        "backRight": .init(type: .key, key: "v", modifiers: [.command]),
         "dpadUp": .init(type: .key, key: "up"),
         "dpadDown": .init(type: .key, key: "down"),
         "dpadLeft": .init(type: .key, key: "left"),
@@ -139,13 +159,14 @@ struct ControllerConfiguration: Codable, Equatable {
 
     init() {}
     private enum CodingKeys: String, CodingKey {
-        case version, leftStick, rightStick, pointerSensitivity, scrollSpeed, deadzone, dictation, buttons
+        case version, leftStick, rightStick, touchpad, pointerSensitivity, scrollSpeed, deadzone, dictation, buttons
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
         leftStick = try c.decodeIfPresent(StickBinding.self, forKey: .leftStick) ?? leftStick
         rightStick = try c.decodeIfPresent(StickBinding.self, forKey: .rightStick) ?? rightStick
+        touchpad = try c.decodeIfPresent(TouchpadConfiguration.self, forKey: .touchpad) ?? touchpad
         pointerSensitivity = try c.decodeIfPresent(Double.self, forKey: .pointerSensitivity) ?? pointerSensitivity
         scrollSpeed = try c.decodeIfPresent(Double.self, forKey: .scrollSpeed) ?? scrollSpeed
         deadzone = try c.decodeIfPresent(Double.self, forKey: .deadzone) ?? deadzone
@@ -163,9 +184,11 @@ struct ControllerConfiguration: Codable, Equatable {
                     "pointerSensitivity must be between 200 and 4000.")
         try require(scrollSpeed.isFinite && (5...120).contains(scrollSpeed), "scrollSpeed must be between 5 and 120.")
         try require(deadzone.isFinite && (0...0.95).contains(deadzone), "deadzone must be between 0 and 0.95.")
+        try require(touchpad.scrollSensitivity.isFinite && (50...3000).contains(touchpad.scrollSensitivity),
+                    "touchpad.scrollSensitivity must be between 50 and 3000.")
         try require(dictation.keyCode != nil, "Unknown dictation key: \(dictation.key).")
         for (id, action) in buttons {
-            try require(Self.buttonNames.contains(id), "Unknown button: \(id). L3 is reserved for the virtual keyboard.")
+            try require(Self.buttonNames.contains(id), "Unknown button: \(id).")
             switch action.type {
             case .mouse:
                 try require(action.button != nil && action.key == nil && action.modifiers.isEmpty,

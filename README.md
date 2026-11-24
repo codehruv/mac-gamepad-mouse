@@ -107,7 +107,7 @@ Apple maps both families to the same **extended gamepad** layout: **A** is the s
 | Input        | Action              |
 |-------------|---------------------|
 | Left stick  | Move pointer        |
-| L3 (stick click) | Show/hide floating **virtual keyboard** |
+| L3 (stick click) | Toggle macOS Dictation (configurable) |
 | Right stick | Scroll (X / Y)      |
 | A           | Left click          |
 | B           | Right click         |
@@ -119,7 +119,7 @@ Adjust **Pointer sensitivity**, **Scroll speed**, and **Stick deadzone** on the 
 
 Turn on **Auto-show keyboard when a text field is focused** to open a **floating panel** when the focused UI is a normal text field, search field, or combo box in **any app** (same Accessibility permission as mouse control). **Secure password fields are skipped.** Typed characters are injected with **`CGEvent` Unicode key events**, like a hardware keyboard.
 
-You can always press **L3** (left stick click) to toggle the panel. The panel is a **non-activating** window so it stays out of the way of the app you are typing into.
+Use **Show keyboard / Hide keyboard** in the app to toggle the panel. L3 toggles Dictation by default. The panel is a **non-activating** window so it stays out of the way of the app you are typing into.
 
 ## Bluetooth and wireless discovery
 
@@ -130,4 +130,4 @@ Wireless controllers should be paired in **Bluetooth** (System Settings or Syste
 - **Pointer does not move:** Confirm Accessibility is enabled for Gamepad Mouse and that **Enable mouse control** is on.
 - **No controller in the list:** Connect via USB or Bluetooth; press a button on the pad so it wakes; try **Search for wireless controllers** again.
 - **Laggy pointer on an older Mac, but the same controller is smooth in games/emulators:** That is usually **not** “Bluetooth Classic vs Bluetooth LE.” Games read the pad inside their render/input loop; this app polls on the main thread and (until tuned) could refresh SwiftUI and query every display on every move. Prefer a **USB cable** if you want to rule out radio congestion, but expect the bigger win from **closing the Gamepad Mouse window** or staying on a light view so the UI is not redrawing constantly, and from **Release** builds (Debug is heavier). Recent builds merge timers and avoid pointless UI updates while the stick is held.
-- **Elite paddles:** This version uses the standard extended profile only; paddles may not map unless exposed by the system as extra elements.
+- **Back paddles:** Configurable as `backLeft` / `backRight` (and optional `backLeft2` / `backRight2`) on macOS 14.4+ when exposed by the controller. Default first paddles send copy/paste. Touchpad vertical swipes scroll; see [configuration](CONFIGURATION.md).
