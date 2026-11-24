@@ -24,10 +24,6 @@ struct ContentView: View {
             controllerService.startWirelessDiscovery()
             syncSyntheticInputActivity()
         }
-        .onDisappear {
-            inputEngine.stopTimer()
-            SyntheticInputActivity.setActive(false)
-        }
         .onReceive(trustPoll) { _ in
             let trusted = AccessibilityGate.isTrusted
             if trusted != accessibilityTrusted {
@@ -193,7 +189,7 @@ struct ContentView: View {
     private var mouseBlock: some View {
         VStack(alignment: .leading, spacing: 16) {
             sectionTitle("Mouse")
-            Toggle("Enable mouse control", isOn: $inputEngine.isEnabled)
+            Toggle("Enable controller", isOn: $inputEngine.isEnabled)
                 .disabled(!accessibilityTrusted)
 
             sliderBlock(
@@ -216,7 +212,7 @@ struct ContentView: View {
                 title: "Stick deadzone",
                 valueLabel: "\(Int(inputEngine.deadzone * 100))%",
                 value: $inputEngine.deadzone,
-                range: 0.05...0.35,
+                range: 0...0.95,
                 step: 0.01
             )
 
@@ -231,8 +227,8 @@ struct ContentView: View {
                 .padding(.top, 4)
 
                 Text(
-                    "Left stick moves the pointer; right stick scrolls. "
-                        + "A = left click, B = right, X = middle (Cross on PlayStation). Double-click: A twice."
+                    "Stick and button assignments come from your JSON config. "
+                        + "Mouse bindings stay held until you release the controller button."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -246,15 +242,30 @@ struct ContentView: View {
     private var controlsBlock: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionTitle("Controls")
-            VStack(alignment: .leading, spacing: 10) {
-                mappingRow("Left stick", "Move pointer")
-                mappingRow("L3 (stick click)", "Toggle virtual keyboard")
-                mappingRow("Right stick", "Scroll")
-                mappingRow("A", "Left click")
-                mappingRow("B", "Right click")
-                mappingRow("X", "Middle click")
+            HStack {
+                Button("Open Config") { NSWorkspace.shared.open(inputEngine.configurationURL) }
+                Button("Reload Config") { inputEngine.reloadConfiguration() }
             }
-            Text("Layout matches Apple’s extended gamepad profile (Xbox / PlayStation).")
+            Text(inputEngine.configurationURL.path)
+                .font(.caption)
+                .textSelection(.enabled)
+            if let error = inputEngine.configurationError {
+                Text(error).font(.caption).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                mappingRow("Left stick", inputEngine.configuration.leftStick.mode.rawValue.capitalized)
+                mappingRow("L3 (stick click)", "Toggle virtual keyboard")
+                mappingRow("Right stick", inputEngine.configuration.rightStick.mode.rawValue.capitalized)
+                ForEach(inputEngine.configuration.buttons.keys.sorted(), id: \.self) { id in
+                    mappingRow(id, inputEngine.configuration.buttons[id]?.label ?? "Disabled")
+                }
+            }
+            Text("Edit and save JSON, then Reload Config (⌘R). Sliders save to the same file. Invalid edits keep the current mapping.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Dictation uses \(inputEngine.configuration.dictation.label). Set the same shortcut in System Settings → Keyboard → Dictation. It toggles recording; it is not hold-to-talk.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

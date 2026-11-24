@@ -139,7 +139,7 @@ final class OnScreenKeyboardViewModel: ObservableObject {
         echoedTail = ""
         stop()
         let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
-            self?.tick()
+            MainActor.assumeIsolated { self?.tick() }
         }
         t.tolerance = 0.005
         RunLoop.main.add(t, forMode: .common)

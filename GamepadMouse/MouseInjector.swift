@@ -10,6 +10,9 @@ final class MouseInjector {
 
     private let eventSource = CGEventSource(stateID: .hidSystemState)
     private var screenParamsObserver: NSObjectProtocol?
+    private var leftHeld = false
+    private var rightHeld = false
+    private var middleHeld = false
 
     /// Union of `NSScreen.frame` in AppKit global coords; refreshed when displays change (avoids scanning every pointer tick).
     private var cachedClampRect: (minX: CGFloat, maxX: CGFloat, minY: CGFloat, maxY: CGFloat)?
@@ -62,34 +65,40 @@ final class MouseInjector {
         let cgPoint = quartzGlobalPoint(fromAppKitGlobal: clampedNS)
         guard let event = CGEvent(
             mouseEventSource: eventSource,
-            mouseType: .mouseMoved,
+            mouseType: leftHeld ? .leftMouseDragged : rightHeld ? .rightMouseDragged : middleHeld ? .otherMouseDragged : .mouseMoved,
             mouseCursorPosition: cgPoint,
-            mouseButton: .left
+            mouseButton: leftHeld ? .left : rightHeld ? .right : middleHeld ? .center : .left
         ) else { return }
         event.post(tap: CGEventTapLocation.cghidEventTap)
     }
 
     func leftMouseDown() {
+        leftHeld = true
         postMouse(type: .leftMouseDown, button: .left)
     }
 
     func leftMouseUp() {
+        leftHeld = false
         postMouse(type: .leftMouseUp, button: .left)
     }
 
     func rightMouseDown() {
+        rightHeld = true
         postMouse(type: .rightMouseDown, button: .right)
     }
 
     func rightMouseUp() {
+        rightHeld = false
         postMouse(type: .rightMouseUp, button: .right)
     }
 
     func otherMouseDown() {
+        middleHeld = true
         postMouse(type: .otherMouseDown, button: .center)
     }
 
     func otherMouseUp() {
+        middleHeld = false
         postMouse(type: .otherMouseUp, button: .center)
     }
 

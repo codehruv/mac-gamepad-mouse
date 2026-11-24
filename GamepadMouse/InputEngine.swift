@@ -3,77 +3,102 @@ import Combine
 import Foundation
 import GameController
 
-/// 60 Hz poll: maps extended gamepad → mouse injector (and D-pad arrows when the OSK is closed).
+/// Poll controller state at 60 Hz; file I/O happens only on load or UI edits.
 final class InputEngine: ObservableObject {
-
-    /// When mouse control runs its main timer, keyboard manager folds L3 + focus polling into this loop (avoids a second 30 Hz timer on the main RunLoop).
     weak var mergePollCoordinator: GlobalKeyboardManager?
-
     @Published var isEnabled = false
-    @Published var pointerSensitivity: Double = 1200
-    @Published var scrollSpeed: Double = 35
-    @Published var deadzone: Double = 0.12
+    @Published private(set) var configuration = ControllerConfiguration()
+    @Published private(set) var configurationError: String?
+    @Published private(set) var lastTickSummary = ""
 
-    @Published private(set) var lastTickSummary: String = ""
-
+    private let configFile = ConfigurationFile()
     private let controllerService: ControllerService
     private let mouse: MouseInjector
     private let keyboard: KeyboardInjector
     private let uiState: GamepadUIState
     private var timer: Timer?
-
-    private var leftDown = false
-    private var rightDown = false
-    private var otherDown = false
     private var lastTickTime: Date?
-
-    private let dpadThreshold: Float = 0.45
-    private var dpadUp = false
-    private var dpadDown = false
-    private var dpadLeft = false
-    private var dpadRight = false
-    private var dpadRepeatDeadline: [String: Date] = [:]
-    private let dpadRepeatInitial: TimeInterval = 0.35
-    private let dpadRepeatInterval: TimeInterval = 0.08
-
+    private var lastController: ObjectIdentifier?
+    private var buttonState = ButtonState()
+    private var activeButtons: [String: ButtonAction] = [:]
+    private var repeatDeadline: [String: Date] = [:]
     private var mergedPollFrameIndex = 0
+    private var terminationObserver: NSObjectProtocol?
+
+    var configurationURL: URL { configFile.url }
+    var pointerSensitivity: Double {
+        get { configuration.pointerSensitivity }
+        set { var next = configuration; next.pointerSensitivity = newValue; saveConfiguration(next) }
+    }
+    var scrollSpeed: Double {
+        get { configuration.scrollSpeed }
+        set { var next = configuration; next.scrollSpeed = newValue; saveConfiguration(next) }
+    }
+    var deadzone: Double {
+        get { configuration.deadzone }
+        set { var next = configuration; next.deadzone = newValue; saveConfiguration(next) }
+    }
 
     init(controllerService: ControllerService, mouse: MouseInjector, keyboard: KeyboardInjector, uiState: GamepadUIState) {
         self.controllerService = controllerService
         self.mouse = mouse
         self.keyboard = keyboard
         self.uiState = uiState
+        reloadConfiguration()
+        terminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.stopTimer() }
     }
 
     deinit {
+        if let terminationObserver { NotificationCenter.default.removeObserver(terminationObserver) }
         stopTimer()
-        releaseAllButtons()
+    }
+
+    func reloadConfiguration() {
+        do {
+            let next = try configFile.load()
+            releaseAllButtons()
+            configuration = next
+            configurationError = nil
+        } catch {
+            configurationError = "Could not load config: \(error.localizedDescription). Previous mapping kept."
+        }
+    }
+
+    private func saveConfiguration(_ next: ControllerConfiguration) {
+        do {
+            try configFile.save(next)
+            releaseAllButtons()
+            configuration = next
+            configurationError = nil
+        } catch {
+            configurationError = error.localizedDescription
+        }
     }
 
     func updateAccessibilityTrustState() {
         if !AccessibilityGate.isTrusted {
             isEnabled = false
+            stopTimer()
         }
     }
 
     func startStopTimerIfNeeded() {
         timer?.invalidate()
         timer = nil
+        releaseAllButtons()
+        lastTickTime = nil
+        lastController = nil
         guard isEnabled, AccessibilityGate.isTrusted else {
-            releaseAllButtons()
-            lastTickTime = nil
-            dpadRepeatDeadline.removeAll()
             mergePollCoordinator?.inputEngineMainTimerStoppedFromMainRunLoop()
             return
         }
         mergePollCoordinator?.inputEngineMainTimerStartedFromMainRunLoop()
-        lastTickTime = nil
-        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
-            self?.tick()
-        }
-        t.tolerance = 0.02
-        RunLoop.main.add(t, forMode: .common)
-        timer = t
+        let next = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }
+        next.tolerance = 0.002
+        RunLoop.main.add(next, forMode: .common)
+        timer = next
     }
 
     func stopTimer() {
@@ -81,155 +106,135 @@ final class InputEngine: ObservableObject {
         timer = nil
         releaseAllButtons()
         lastTickTime = nil
-        dpadRepeatDeadline.removeAll()
+        lastController = nil
         mergePollCoordinator?.inputEngineMainTimerStoppedFromMainRunLoop()
     }
 
-    func onEnabledChanged() {
-        if isEnabled {
-            if AccessibilityGate.isTrusted {
-                startStopTimerIfNeeded()
-            } else {
-                isEnabled = false
-            }
-        } else {
-            stopTimer()
-        }
-    }
+    func onEnabledChanged() { startStopTimerIfNeeded() }
 
     private func tick() {
         guard isEnabled, AccessibilityGate.isTrusted else { return }
-
         mergedPollFrameIndex += 1
-        let padEarly = controllerService.selectedController?.extendedGamepad
-        mergePollCoordinator?.onInputEngineTimerTickFromMainRunLoop(frameIndex: mergedPollFrameIndex, extendedGamepad: padEarly)
+        let controller = controllerService.selectedController
+        let pad = controller?.extendedGamepad
+        mergePollCoordinator?.onInputEngineTimerTickFromMainRunLoop(frameIndex: mergedPollFrameIndex, extendedGamepad: pad)
 
-        guard let pad = padEarly else {
-            setLastTickSummaryIfChanged("No extended gamepad")
+        guard let controller, let pad else {
+            releaseAllButtons()
+            lastController = nil
+            lastTickTime = nil
+            setLastTickSummary("No extended gamepad")
             return
         }
-
+        let identity = ObjectIdentifier(controller)
+        if identity != lastController {
+            releaseAllButtons()
+            lastTickTime = nil
+            lastController = identity
+        }
         let now = Date()
-        let dt: TimeInterval
-        if let prev = lastTickTime {
-            dt = min(max(now.timeIntervalSince(prev), 1.0 / 240.0), 0.1)
-        } else {
-            dt = 1.0 / 60.0
-        }
+        let dt = lastTickTime.map { min(max(now.timeIntervalSince($0), 1.0 / 240.0), 0.1) } ?? 1.0 / 60.0
         lastTickTime = now
+        applyStick(pad.leftThumbstick, binding: configuration.leftStick, deltaTime: dt)
+        applyStick(pad.rightThumbstick, binding: configuration.rightStick, deltaTime: dt)
 
-        let lx = CGFloat(pad.leftThumbstick.xAxis.value)
-        let ly = CGFloat(pad.leftThumbstick.yAxis.value)
-        let rx = CGFloat(pad.rightThumbstick.xAxis.value)
-        let ry = CGFloat(pad.rightThumbstick.yAxis.value)
-
-        let dz = CGFloat(deadzone)
-        let (dx, dy) = DefaultMapping.pointerDelta(
-            leftX: lx,
-            leftY: ly,
-            deadzone: dz,
-            sensitivityPointsPerSecond: pointerSensitivity,
-            deltaTime: dt
-        )
-        if dx != 0 || dy != 0 {
-            mouse.movePointer(deltaX: dx, deltaY: dy)
-        }
-
-        let (svx, svy) = DefaultMapping.scrollDelta(
-            rightX: rx,
-            rightY: ry,
-            deadzone: dz,
-            scrollSpeed: CGFloat(scrollSpeed)
-        )
-        if svx != 0 || svy != 0 {
-            mouse.scrollPixels(deltaY: svy, deltaX: svx)
-        }
-
-        let osk = uiState.onScreenKeyboardVisible
-
-        if !osk {
-            handleDpadArrows(dpad: pad.dpad, now: now)
-            updateButton(pad.buttonA, wasDown: &leftDown, down: mouse.leftMouseDown, up: mouse.leftMouseUp)
-            updateButton(pad.buttonB, wasDown: &rightDown, down: mouse.rightMouseDown, up: mouse.rightMouseUp)
-            updateButton(pad.buttonX, wasDown: &otherDown, down: mouse.otherMouseDown, up: mouse.otherMouseUp)
-        } else {
-            if leftDown { mouse.leftMouseUp(); leftDown = false }
-            if rightDown { mouse.rightMouseUp(); rightDown = false }
-            if otherDown { mouse.otherMouseUp(); otherDown = false }
-        }
-
-        var parts: [String] = []
-        if dx != 0 || dy != 0 { parts.append("move") }
-        if svx != 0 || svy != 0 { parts.append("scroll") }
-        if !osk, pad.buttonA.isPressed || pad.buttonB.isPressed || pad.buttonX.isPressed {
-            parts.append("buttons")
-        }
-        if !osk, dpadUp || dpadDown || dpadLeft || dpadRight { parts.append("dpad") }
-        setLastTickSummaryIfChanged(parts.isEmpty ? "idle" : parts.joined(separator: ", "))
-    }
-
-    /// Avoid assigning `@Published` every frame when the string is unchanged (was hammering SwiftUI on slower Macs).
-    private func setLastTickSummaryIfChanged(_ newValue: String) {
-        guard newValue != lastTickSummary else { return }
-        lastTickSummary = newValue
-    }
-
-    private func handleDpadArrows(dpad: GCControllerDirectionPad, now: Date) {
-        let up = dpad.yAxis.value > dpadThreshold
-        let down = dpad.yAxis.value < -dpadThreshold
-        let left = dpad.xAxis.value < -dpadThreshold
-        let right = dpad.xAxis.value > dpadThreshold
-
-        fireArrowIfNeeded(id: "u", pressed: up, wasPressed: dpadUp, arrow: .up, now: now)
-        fireArrowIfNeeded(id: "d", pressed: down, wasPressed: dpadDown, arrow: .down, now: now)
-        fireArrowIfNeeded(id: "l", pressed: left, wasPressed: dpadLeft, arrow: .left, now: now)
-        fireArrowIfNeeded(id: "r", pressed: right, wasPressed: dpadRight, arrow: .right, now: now)
-
-        dpadUp = up
-        dpadDown = down
-        dpadLeft = left
-        dpadRight = right
-
-        if !up { dpadRepeatDeadline["u"] = nil }
-        if !down { dpadRepeatDeadline["d"] = nil }
-        if !left { dpadRepeatDeadline["l"] = nil }
-        if !right { dpadRepeatDeadline["r"] = nil }
-    }
-
-    private func fireArrowIfNeeded(
-        id: String,
-        pressed: Bool,
-        wasPressed: Bool,
-        arrow: KeyboardInjector.Arrow,
-        now: Date
-    ) {
-        guard pressed else { return }
-        if !wasPressed {
-            keyboard.tapArrow(arrow)
-            dpadRepeatDeadline[id] = now.addingTimeInterval(dpadRepeatInitial)
+        if uiState.onScreenKeyboardVisible {
+            releaseAllButtons()
+            setLastTickSummary("Virtual keyboard owns buttons")
             return
         }
-        if let deadline = dpadRepeatDeadline[id], now >= deadline {
-            keyboard.tapArrow(arrow)
-            dpadRepeatDeadline[id] = now.addingTimeInterval(dpadRepeatInterval)
+        let changes = buttonState.update(pressedButtons(pad))
+        for id in changes.released.sorted() { releaseButton(id) }
+        for id in changes.pressed.sorted() {
+            guard let action = configuration.buttons[id] else { continue }
+            activeButtons[id] = action
+            pressAction(action)
+            if id.hasPrefix("dpad"), action.type == .key {
+                repeatDeadline[id] = now.addingTimeInterval(0.35)
+            }
+        }
+        for id in Array(repeatDeadline.keys) {
+            if let deadline = repeatDeadline[id], now >= deadline, let action = activeButtons[id] {
+                pressAction(action)
+                repeatDeadline[id] = now.addingTimeInterval(0.08)
+            }
+        }
+        let summary = activeButtons.keys.sorted().joined(separator: ", ")
+        setLastTickSummary(summary.isEmpty ? "idle" : summary)
+    }
+
+    private func applyStick(_ stick: GCControllerDirectionPad, binding: StickBinding, deltaTime: TimeInterval) {
+        let x = CGFloat(stick.xAxis.value) * (binding.invertX ? -1 : 1)
+        let y = CGFloat(stick.yAxis.value) * (binding.invertY ? -1 : 1)
+        switch binding.mode {
+        case .disabled: break
+        case .mouse:
+            let (dx, dy) = DefaultMapping.pointerDelta(leftX: x, leftY: y, deadzone: CGFloat(deadzone),
+                sensitivityPointsPerSecond: pointerSensitivity, deltaTime: deltaTime)
+            if dx != 0 || dy != 0 { mouse.movePointer(deltaX: dx, deltaY: dy) }
+        case .scroll:
+            let (dx, dy) = DefaultMapping.scrollDelta(rightX: x, rightY: y, deadzone: CGFloat(deadzone),
+                scrollSpeed: CGFloat(scrollSpeed) * CGFloat(deltaTime * 60))
+            if dx != 0 || dy != 0 { mouse.scrollPixels(deltaY: dy, deltaX: dx) }
         }
     }
 
-    private func updateButton(
-        _ button: GCControllerButtonInput,
-        wasDown: inout Bool,
-        down: () -> Void,
-        up: () -> Void
-    ) {
-        let pressed = button.isPressed
-        if pressed && !wasDown { down() }
-        if !pressed && wasDown { up() }
-        wasDown = pressed
+    private func pressedButtons(_ pad: GCExtendedGamepad) -> Set<String> {
+        let values: [(String, Bool)] = [
+            ("a", pad.buttonA.isPressed), ("b", pad.buttonB.isPressed),
+            ("x", pad.buttonX.isPressed), ("y", pad.buttonY.isPressed),
+            ("leftShoulder", pad.leftShoulder.isPressed), ("rightShoulder", pad.rightShoulder.isPressed),
+            ("leftTrigger", pad.leftTrigger.isPressed), ("rightTrigger", pad.rightTrigger.isPressed),
+            ("menu", pad.buttonMenu.isPressed), ("options", pad.buttonOptions?.isPressed == true),
+            ("home", pad.buttonHome?.isPressed == true), ("rightStick", pad.rightThumbstickButton?.isPressed == true),
+            ("dpadUp", pad.dpad.up.isPressed), ("dpadDown", pad.dpad.down.isPressed),
+            ("dpadLeft", pad.dpad.left.isPressed), ("dpadRight", pad.dpad.right.isPressed)
+        ]
+        return Set(values.filter { $0.1 }.map { $0.0 })
+    }
+
+    private func pressAction(_ action: ButtonAction) {
+        switch action.type {
+        case .mouse:
+            guard let button = action.button else { return }
+            let count = activeButtons.values.filter { $0.type == .mouse && $0.button == button }.count
+            if count == 1 { postMouse(button, down: true) }
+        case .key:
+            if let shortcut = action.shortcut { keyboard.tapShortcut(shortcut) }
+        case .dictation: keyboard.tapShortcut(configuration.dictation)
+        case .none: break
+        }
+    }
+
+    private func releaseButton(_ id: String) {
+        repeatDeadline[id] = nil
+        guard let action = activeButtons.removeValue(forKey: id), action.type == .mouse,
+              let button = action.button else { return }
+        if !activeButtons.values.contains(where: { $0.type == .mouse && $0.button == button }) {
+            postMouse(button, down: false)
+        }
+    }
+
+    private func postMouse(_ button: MouseBinding, down: Bool) {
+        switch button {
+        case .left: down ? mouse.leftMouseDown() : mouse.leftMouseUp()
+        case .right: down ? mouse.rightMouseDown() : mouse.rightMouseUp()
+        case .middle: down ? mouse.otherMouseDown() : mouse.otherMouseUp()
+        }
     }
 
     private func releaseAllButtons() {
-        if leftDown { mouse.leftMouseUp(); leftDown = false }
-        if rightDown { mouse.rightMouseUp(); rightDown = false }
-        if otherDown { mouse.otherMouseUp(); otherDown = false }
+        for button in [MouseBinding.left, .right, .middle] {
+            if activeButtons.values.contains(where: { $0.type == .mouse && $0.button == button }) {
+                postMouse(button, down: false)
+            }
+        }
+        activeButtons.removeAll()
+        repeatDeadline.removeAll()
+        buttonState.reset()
+    }
+
+    private func setLastTickSummary(_ text: String) {
+        if lastTickSummary != text { lastTickSummary = text }
     }
 }

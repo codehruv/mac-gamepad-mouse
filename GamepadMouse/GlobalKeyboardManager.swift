@@ -68,7 +68,7 @@ private final class KeyboardPanelCloseForwarder: NSObject, NSWindowDelegate {
 final class GlobalKeyboardManager: ObservableObject {
 
     @Published var isPanelVisible = false
-    @Published var autoShowOnTextFocus = true
+    @Published var autoShowOnTextFocus = false
 
     let keyboardInjector: KeyboardInjector
 
@@ -162,7 +162,7 @@ final class GlobalKeyboardManager: ObservableObject {
     private func startAuxiliaryPolling() {
         auxTimer?.invalidate()
         let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            self?.auxTick()
+            MainActor.assumeIsolated { self?.auxTick() }
         }
         t.tolerance = 0.02
         RunLoop.main.add(t, forMode: .common)

@@ -6,6 +6,21 @@ final class KeyboardInjector {
 
     private let source = CGEventSource(stateID: .hidSystemState)
 
+    func tapShortcut(_ shortcut: KeyShortcut) {
+        guard let code = shortcut.keyCode else { return }
+        var flags: CGEventFlags = []
+        for modifier in shortcut.modifiers {
+            switch modifier {
+            case .command: flags.insert(.maskCommand)
+            case .option: flags.insert(.maskAlternate)
+            case .control: flags.insert(.maskControl)
+            case .shift: flags.insert(.maskShift)
+            }
+        }
+        postKey(keyCode: CGKeyCode(code), keyDown: true, flags: flags)
+        postKey(keyCode: CGKeyCode(code), keyDown: false, flags: flags)
+    }
+
     enum Arrow {
         case left, right, up, down
 
@@ -33,7 +48,7 @@ final class KeyboardInjector {
     }
 
     private func typeTextChunk(_ text: String) {
-        var utf16 = Array(text.utf16)
+        let utf16 = Array(text.utf16)
         guard !utf16.isEmpty else { return }
         utf16.withUnsafeBufferPointer { buf in
             guard let base = buf.baseAddress else { return }

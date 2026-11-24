@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "leftStick": { "mode": "mouse", "invertX": false, "invertY": false },
+  "rightStick": { "mode": "scroll", "invertX": false, "invertY": false },
+  "pointerSensitivity": 1200,
+  "scrollSpeed": 35,
+  "deadzone": 0.12,
+  "dictation": { "key": "d", "modifiers": ["control", "option"] },
+  "buttons": {
+    "a": { "type": "mouse", "button": "left" },
+    "b": { "type": "key", "key": "escape" },
+    "x": { "type": "mouse", "button": "right" },
+    "y": { "type": "key", "key": "enter" },
+    "leftShoulder": { "type": "key", "key": "[", "modifiers": ["command"] },
+    "rightShoulder": { "type": "key", "key": "]", "modifiers": ["command"] },
+    "leftTrigger": { "type": "dictation" },
+    "rightTrigger": { "type": "key", "key": "tab", "modifiers": ["command"] },
+    "menu": { "type": "key", "key": "space", "modifiers": ["command"] },
+    "options": { "type": "key", "key": "up", "modifiers": ["control"] },
+    "rightStick": { "type": "mouse", "button": "middle" },
+    "dpadUp": { "type": "key", "key": "up" },
+    "dpadDown": { "type": "key", "key": "down" },
+    "dpadLeft": { "type": "key", "key": "left" },
+    "dpadRight": { "type": "key", "key": "right" }
+  }
+}

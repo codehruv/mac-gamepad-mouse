@@ -89,5 +89,15 @@ struct GamepadMouseApp: App {
                 .environmentObject(keyboardManager)
                 .background(MainSwiftUIWindowHook())
         }
+        .commands {
+            CommandMenu("Controller") {
+                Button("Open Config") { NSWorkspace.shared.open(inputEngine.configurationURL) }
+                Button("Reload Config") { inputEngine.reloadConfiguration() }
+                    .keyboardShortcut("r", modifiers: .command)
+                Divider()
+                Toggle("Enable Controller", isOn: $inputEngine.isEnabled)
+                    .disabled(!AccessibilityGate.isTrusted)
+            }
+        }
     }
 }
